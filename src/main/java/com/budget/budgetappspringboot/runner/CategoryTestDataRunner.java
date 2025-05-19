@@ -4,6 +4,7 @@ import com.budget.budgetappspringboot.entity.Category;
 import com.budget.budgetappspringboot.repository.CategoryRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,11 +14,12 @@ import java.util.Arrays;
 
 @Component
 @Slf4j
-public class TestDataRunner implements CommandLineRunner {
+@Order(1)
+public class CategoryTestDataRunner implements CommandLineRunner {
 
     private final CategoryRepository categoryRepository;
 
-    public TestDataRunner(CategoryRepository categoryRepository) {
+    public CategoryTestDataRunner(CategoryRepository categoryRepository) {
         this.categoryRepository = categoryRepository;
     }
 
