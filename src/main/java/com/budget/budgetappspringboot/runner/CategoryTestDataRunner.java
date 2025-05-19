@@ -32,7 +32,7 @@ public class CategoryTestDataRunner implements CommandLineRunner {
         //categoryRepository.deleteAll();
         //log.info("All existing categories deleted via CommandLineRunner.");
 
-        List<String> categoryNames = Arrays.asList("Groceries", "Utilities", "Restaurants", "Shopping", "Entertainment", "Automotive", "Healthcare", "Education", "Travel");
+        List<String> categoryNames = Arrays.asList("Groceries", "Utilities", "Restaurants", "Shopping", "Entertainment", "Automotive", "Healthcare", "Education", "Travel","Salary");
 
         for (String name : categoryNames) {
             Optional<Category> existingCategory = categoryRepository.findByName(name);
