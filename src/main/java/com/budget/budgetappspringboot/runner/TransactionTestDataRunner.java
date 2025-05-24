@@ -2,112 +2,115 @@ package com.budget.budgetappspringboot.runner;
 
 import com.budget.budgetappspringboot.entity.Account;
 import com.budget.budgetappspringboot.entity.Category;
-import com.budget.budgetappspringboot.entity.Transaction;
-import com.budget.budgetappspringboot.model.enums.AccountType; // Your AccountType enum
-import com.budget.budgetappspringboot.model.enums.TransactionType; // Your TransactionType enum
+import com.budget.budgetappspringboot.entity.Transaction; // Make sure Transaction is imported
+import com.budget.budgetappspringboot.model.enums.TransactionType;
 import com.budget.budgetappspringboot.repository.AccountRepository;
 import com.budget.budgetappspringboot.repository.CategoryRepository;
-import com.budget.budgetappspringboot.repository.TransactionRepository;
+import com.budget.budgetappspringboot.repository.TransactionRepository; // To list transactions at the end
+import com.budget.budgetappspringboot.service.TransactionService;   // <<< Import your new service
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+// No @Transactional needed here, as the service method should be transactional
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Arrays;
-import java.util.List;
-import java.util.NoSuchElementException; // For orElseThrow
+import java.util.NoSuchElementException;
 
 @Component
 @Slf4j
 @Order(3) // Ensure this runs after CategoryTestDataRunner and AccountTestDataRunner
 public class TransactionTestDataRunner implements CommandLineRunner {
 
-    private final TransactionRepository transactionRepository;
     private final CategoryRepository categoryRepository;
     private final AccountRepository accountRepository;
+    private final TransactionService transactionService; // <<< Inject TransactionService
+    private final TransactionRepository transactionRepository; // <<< Keep for listing all transactions
 
-    public TransactionTestDataRunner(TransactionRepository transactionRepository,
-                                     CategoryRepository categoryRepository,
-                                     AccountRepository accountRepository) {
-        this.transactionRepository = transactionRepository;
+    // Updated constructor to inject TransactionService
+    public TransactionTestDataRunner(CategoryRepository categoryRepository,
+                                     AccountRepository accountRepository,
+                                     TransactionService transactionService,
+                                     TransactionRepository transactionRepository) {
         this.categoryRepository = categoryRepository;
         this.accountRepository = accountRepository;
+        this.transactionService = transactionService;
+        this.transactionRepository = transactionRepository;
     }
 
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        log.info("--- [TransactionTestDataRunner]: Setting up test data for Transactions ---");
+        log.info("--- [TransactionTestDataRunner]: Setting up transactions using TransactionService ---");
 
-        // Ensure prerequisite runners have run and data exists
-        // Fetch some Categories (assuming they were created by CategoryTestDataRunner)
+        // Fetch prerequisite Categories and Accounts
+        // These should have been created by CategoryTestDataRunner and AccountTestDataRunner
         Category catSalary = categoryRepository.findByName("Salary")
-                .orElseThrow(() -> new NoSuchElementException("Category 'Salary' not found. Ensure CategoryTestDataRunner has run."));
+                .orElseThrow(() -> new NoSuchElementException("Category 'Salary' not found. Ensure prerequisite runners have executed."));
         Category catGroceries = categoryRepository.findByName("Groceries")
                 .orElseThrow(() -> new NoSuchElementException("Category 'Groceries' not found."));
-        Category catUtilities = categoryRepository.findByName("Utilities")
-                .orElseThrow(() -> new NoSuchElementException("Category 'Utilities' not found."));
         Category catEntertainment = categoryRepository.findByName("Entertainment")
                 .orElseThrow(() -> new NoSuchElementException("Category 'Entertainment' not found."));
-        Category catDiningOut = categoryRepository.findByName("Restaurants")
-                .orElseThrow(() -> new NoSuchElementException("Category 'Restaurants' not found."));
 
-
-        // Fetch some Accounts (assuming they were created by AccountTestDataRunner)
-        // Using your specific AccountType names: CHECKING, CREDIT_CARD
-        Account checkingAccount = accountRepository.findByName("Main Checking") // Assuming this account name exists
-                .orElseThrow(() -> new NoSuchElementException("Account 'Main Checking' not found. Ensure AccountTestDataRunner has run."));
-        Account creditCard = accountRepository.findByName("Visa Rewards Card") // Assuming this account name exists
+        Account checkingAccount = accountRepository.findByName("Main Checking")
+                .orElseThrow(() -> new NoSuchElementException("Account 'Main Checking' not found. Ensure prerequisite runners have executed."));
+        Account creditCard = accountRepository.findByName("Visa Rewards Card")
                 .orElseThrow(() -> new NoSuchElementException("Account 'Visa Rewards Card' not found."));
 
+        // Log initial balances for verification
+        log.info("Initial balance for '{}': {}", checkingAccount.getName(), checkingAccount.getBalance());
+        log.info("Initial balance for '{}': {}", creditCard.getName(), creditCard.getBalance());
 
-        // Create some transactions
-        // Transaction(BigDecimal amount, TransactionType transactionType, LocalDate transactionDate,
-        //             String description, Category category, Account account)
+        // --- Create transactions using the TransactionService ---
+        try {
+            log.info("Attempting to create Salary transaction...");
+            transactionService.createTransaction(
+                    new BigDecimal("3500.00"), TransactionType.INCOME, LocalDate.now().withDayOfMonth(1),
+                    "Monthly Salary", catSalary.getId(), checkingAccount.getId());
+            log.info("Salary transaction created successfully via service.");
 
-        List<Transaction> transactionsToSeed = Arrays.asList(
-                new Transaction(new BigDecimal("3500.00"), TransactionType.INCOME, LocalDate.now().withDayOfMonth(1),
-                        "Monthly Salary", catSalary, checkingAccount),
-                new Transaction(new BigDecimal("125.50"), TransactionType.EXPENSE, LocalDate.now().minusDays(5),
-                        "Weekly Groceries", catGroceries, checkingAccount),
-                new Transaction(new BigDecimal("85.00"), TransactionType.EXPENSE, LocalDate.now().minusDays(3),
-                        "Electricity Bill", catUtilities, checkingAccount),
-                new Transaction(new BigDecimal("45.00"), TransactionType.EXPENSE, LocalDate.now().minusDays(2),
-                        "Movie Tickets", catEntertainment, creditCard),
-                new Transaction(new BigDecimal("60.75"), TransactionType.EXPENSE, LocalDate.now().minusDays(1),
-                        "Dinner with friends", catDiningOut, creditCard),
-                new Transaction(new BigDecimal("22.00"), TransactionType.EXPENSE, LocalDate.now().minusDays(4),
-                        "Coffee and Snacks", catDiningOut, checkingAccount)
-        );
+            log.info("Attempting to create Groceries transaction...");
+            transactionService.createTransaction(
+                    new BigDecimal("125.50"), TransactionType.EXPENSE, LocalDate.now().minusDays(5),
+                    "Weekly Groceries", catGroceries.getId(), checkingAccount.getId());
+            log.info("Groceries transaction created successfully via service.");
 
-        // Note: This basic seeding does NOT update account balances.
-        // Account balance updates should ideally be handled by a service layer
-        // when actual transactions are created in a real application.
-        // For test data, we are just creating the transaction records.
+            log.info("Attempting to create Entertainment transaction...");
+            transactionService.createTransaction(
+                    new BigDecimal("45.00"), TransactionType.EXPENSE, LocalDate.now().minusDays(2),
+                    "Movie Tickets", catEntertainment.getId(), creditCard.getId());
+            log.info("Entertainment transaction created successfully via service.");
 
-        transactionRepository.saveAll(transactionsToSeed);
-        log.info("Saved {} initial transactions.", transactionsToSeed.size());
-
-        log.info("--- [TransactionTestDataRunner]: Retrieving all transactions ---");
-        List<Transaction> allTransactions = transactionRepository.findAll();
-        if (allTransactions.isEmpty()) {
-            log.info("No transactions found in the database.");
-        } else {
-            allTransactions.forEach(transaction ->
-                    log.info("Transaction - ID: {}, Date: {}, Type: {}, Amount: {}, Desc: '{}', Account: '{}', Category: '{}'",
-                            transaction.getId(),
-                            transaction.getTransactionDate(),
-                            transaction.getTransactionType().getDisplayName(),
-                            transaction.getAmount(),
-                            transaction.getDescription(),
-                            transaction.getAccount().getName(), // Assuming Account has getName()
-                            transaction.getCategory() != null ? transaction.getCategory().getName() : "N/A" // Assuming Category has getName()
-                    )
-            );
+        } catch (Exception e) {
+            log.error("!!! Error during transaction creation via service: {}", e.getMessage(), e);
         }
+
+        // --- Verify account balance updates ---
+        log.info("--- Verifying Account Balances After Transactions ---");
+
+        Account updatedCheckingAccount = accountRepository.findById(checkingAccount.getId())
+                .orElseThrow(() -> new NoSuchElementException("Checking account (ID: " + checkingAccount.getId() + ") vanished after transactions!"));
+        Account updatedCreditCard = accountRepository.findById(creditCard.getId())
+                .orElseThrow(() -> new NoSuchElementException("Credit card (ID: " + creditCard.getId() + ") vanished after transactions!"));
+
+        log.info("Updated balance for '{}' (ID: {}): {}", updatedCheckingAccount.getName(), updatedCheckingAccount.getId(), updatedCheckingAccount.getBalance());
+        log.info("Updated balance for '{}' (ID: {}): {}", updatedCreditCard.getName(), updatedCreditCard.getId(), updatedCreditCard.getBalance());
+
+        // --- List all transactions from the database ---
+        log.info("--- [TransactionTestDataRunner]: Retrieving all transactions from repository ---");
+        transactionRepository.findAll().forEach(transaction ->
+                log.info("Transaction - ID: {}, Date: {}, Type: {}, Amount: {}, Desc: '{}', Account: '{}', Category: '{}'",
+                        transaction.getId(),
+                        transaction.getTransactionDate(),
+                        transaction.getTransactionType().getDisplayName(),
+                        transaction.getAmount(),
+                        transaction.getDescription(),
+                        transaction.getAccount().getName(), // Assumes Account has getName()
+                        transaction.getCategory() != null ? transaction.getCategory().getName() : "N/A" // Assumes Category has getName()
+                )
+        );
         log.info("--- [TransactionTestDataRunner]: Finished ---");
     }
 }
