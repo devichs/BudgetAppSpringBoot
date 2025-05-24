@@ -40,4 +40,22 @@ public class CategoryServiceImpl implements CategoryService {
         log.info("Fetching category by name: {}", name);
         return categoryRepository.findByName(name);
     }
+
+    @Override
+    @Transactional
+    public Category findOrCreateCategory(String categoryName) {
+        if (categoryName == null || categoryName.trim().isEmpty()) {
+            log.warn("Category name is null or empty, cannot find or create a category");
+            return null;
+        }
+        Optional<Category> existingCategory = categoryRepository.findByNameIgnoreCase(categoryName.trim());
+        if (existingCategory.isPresent()) {
+            log.info("Found existing category: {}", categoryName);
+            return existingCategory.get();
+        } else {
+            log.info("Category '{}' not found, creating a new one.", categoryName);
+            Category newCategory = new Category(null, categoryName.trim());
+            return categoryRepository.save(newCategory);
+        }
+    }
 }
