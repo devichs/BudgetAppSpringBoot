@@ -1,14 +1,16 @@
 package com.budget.budgetappspringboot.repository;
 
 import com.budget.budgetappspringboot.entity.Account;
+import com.budget.budgetappspringboot.model.enums.TransactionType;
+import com.budget.budgetappspringboot.entity.Category;
 import com.budget.budgetappspringboot.entity.Transaction;
-// ... other imports ...
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.time.LocalDate;
 
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
@@ -26,6 +28,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category")
     List<Transaction> findAllWithDetails();
 
-
+    List<Transaction> findByCategoryAndTransactionDateBetween(Category category, LocalDate startDate, LocalDate endDate);
+    List<Transaction> findByOrderByTransactionDateDesc();
+    List<Transaction> findByTransactionType(TransactionType transactionType);
+    List<Transaction> findByDescriptionContainingIgnoreCase(String keyword);
     // ... other custom finder methods ...
 }
