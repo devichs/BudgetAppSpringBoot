@@ -9,5 +9,6 @@ public interface CategoryService {
     List<Category> getAllCategories();
     Optional<Category> findCategoryById(Long id);
     Optional<Category> findCategoryByName(String name);
+    Category findOrCreateCategory(String categoryName);
     // Add createCategory later if needed from CLI
 }
