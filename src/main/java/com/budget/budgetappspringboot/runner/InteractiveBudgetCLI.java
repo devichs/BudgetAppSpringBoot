@@ -7,11 +7,15 @@ import com.budget.budgetappspringboot.model.enums.TransactionType;
 import com.budget.budgetappspringboot.service.AccountService;
 import com.budget.budgetappspringboot.service.CategoryService;
 import com.budget.budgetappspringboot.service.TransactionService;
+import com.budget.budgetappspringboot.service.impl.AccountServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import com.budget.budgetappspringboot.dto.ImportSummary;
+import com.budget.budgetappspringboot.service.CsvImportService;
 
+import java.io.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -28,15 +32,20 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
     private final TransactionService transactionService;
     private final AccountService accountService;
     private final CategoryService categoryService;
+    private final CsvImportService csvImportService;
     private final Scanner scanner; // For reading user input
+    private final AccountServiceImpl accountServiceImpl;
 
     public InteractiveBudgetCLI(TransactionService transactionService,
                                 AccountService accountService,
-                                CategoryService categoryService) {
+                                CategoryService categoryService,
+                                CsvImportService csvImportService, AccountServiceImpl accountServiceImpl) {
         this.transactionService = transactionService;
         this.accountService = accountService;
         this.categoryService = categoryService;
+        this.csvImportService = csvImportService;
         this.scanner = new Scanner(System.in); // Initialize scanner
+        this.accountServiceImpl = accountServiceImpl;
     }
 
     @Override
@@ -67,6 +76,9 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
                 case "5":
                     handleListCategories();
                     break;
+                case "6":
+                    handleImportCsvTransactions();
+                    break;
                 case "0":
                     running = false;
                     break;
@@ -89,6 +101,7 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
         System.out.println("3. View Transactions for Account");
         System.out.println("4. View Account Balances");
         System.out.println("5. List Categories");
+        System.out.println("6. Import Transactions from CSV");
         System.out.println("0. Exit");
         System.out.println("-----------------------");
     }
@@ -157,6 +170,8 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
 
 
             transactionService.createTransaction(amount, type, date, description, categoryId, selectedAccount.getId());
+            Account updatedAccount = accountService.findAccountById(selectedAccount.getId())
+                            .orElse(selectedAccount);
             log.info("{} of {} added successfully to account '{}'. New balance: {}",
                     type.getDisplayName(), amount, selectedAccount.getName(), accountService.findAccountById(selectedAccount.getId()).get().getBalance());
 
@@ -227,6 +242,72 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
             log.info("No categories found.");
         } else {
             categories.forEach(cat -> log.info("Category - ID: {}, Name: {}", cat.getId(), cat.getName()));
+        }
+    }
+
+    private void handleImportCsvTransactions() {
+        log.info("--- Import Transactions from CSV ---");
+        try {
+            System.out.print("Enter the full path to the CSV file: ");
+            String filePath = scanner.nextLine().trim();
+
+            File csvFile = new File(filePath);
+            if (!csvFile.exists() || !csvFile.isFile()) {
+                log.warn("File not found or is not in the expected format or file type: {}", filePath);
+                return;
+            }
+
+            List<Account> accounts = accountService.getAllAccounts();
+            if (accounts.isEmpty()) {
+                log.warn("No accounts available to import transactions into. Please add an account first.");
+                return;
+            }
+
+            log.info("Available Accounts to import into: ");
+            for (int i = 0; i < accounts.size(); i++){
+                System.out.printf("%d. %s\n", i + 1, accounts.get(i).getName());
+            }
+            System.out.print("Select Account (number) for this CSV import: ");
+            int accChoice = Integer.parseInt(scanner.nextLine().trim()) - 1;
+
+            if (accChoice < 0 || accChoice >= accounts.size()) {
+                log.warn("Invalid account selection:");
+                return;
+            }
+            Account targetAccount = accounts.get(accChoice);
+
+            log.info("Importing transactions from '{}' into account '{}'...", csvFile.getName(), targetAccount.getName());
+
+            try (InputStream inputStream = new FileInputStream(csvFile)) {
+                ImportSummary summary = csvImportService.importTransactionsFromCsv(inputStream, targetAccount.getId(), csvFile.getName());
+
+                log.info("--- CSV Import Summary for '{}' ---", csvFile.getName());
+                log.info("Total data rows read: {}", summary.totalRowsRead());
+                log.info("Successfully imported transactions: {}", summary.successfulImports());
+                log.info("Failed imports: {}", summary.failedImports());
+                if (summary.failedImports() > 0 && !summary.errorMessages().isEmpty()) {
+                    log.warn("Errors encountered during import:");
+                    summary.errorMessages().forEach(log::error);
+                } else if (summary.failedImports() == -1 && !summary.errorMessages().isEmpty()) {
+                    log.error("Critical error reading CSV file:");
+                    summary.errorMessages().forEach(log::error);
+                }
+                log.info("-------------------------------------");
+
+                Account updatedTargetAccount = accountService.findAccountById(targetAccount.getId())
+                        .orElse(targetAccount);
+                log.info("New balance for account '{}' after import: {}", updatedTargetAccount.getName(), String.format("%.2f", updatedTargetAccount.getBalance()));
+
+            } catch (FileNotFoundException e) {
+                log.error("Error: CSV file not found at path '{}'", filePath);
+
+            } catch (IOException e) {
+                log.error("Error reading CSV file: '{}': {}", filePath, e.getMessage(), e);
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Invalid number format for account selection.");
+        } catch (Exception e) {
+            log.error("An unexpected error occurred during CSV import process: {}", e.getMessage(), e);
         }
     }
 }
