@@ -1,10 +1,12 @@
 package com.budget.budgetappspringboot.runner;
 
+import com.budget.budgetappspringboot.dto.BudgetStatusDTO;
 import com.budget.budgetappspringboot.entity.Account;
 import com.budget.budgetappspringboot.entity.Category;
 import com.budget.budgetappspringboot.entity.Transaction;
 import com.budget.budgetappspringboot.model.enums.TransactionType;
 import com.budget.budgetappspringboot.service.AccountService;
+import com.budget.budgetappspringboot.service.BudgetService;
 import com.budget.budgetappspringboot.service.CategoryService;
 import com.budget.budgetappspringboot.service.TransactionService;
 import com.budget.budgetappspringboot.service.impl.AccountServiceImpl;
@@ -15,9 +17,14 @@ import org.springframework.stereotype.Component;
 import com.budget.budgetappspringboot.dto.ImportSummary;
 import com.budget.budgetappspringboot.service.CsvImportService;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.io.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -26,33 +33,32 @@ import java.util.Scanner;
 
 @Component
 @Slf4j
-@Order(10) // Run after data seeders (if any are active with lower order numbers)
+@Order(10)
 public class InteractiveBudgetCLI implements CommandLineRunner {
 
     private final TransactionService transactionService;
     private final AccountService accountService;
     private final CategoryService categoryService;
     private final CsvImportService csvImportService;
-    private final Scanner scanner; // For reading user input
-    private final AccountServiceImpl accountServiceImpl;
+    private final BudgetService budgetService;
+    private final Scanner scanner;
 
     public InteractiveBudgetCLI(TransactionService transactionService,
                                 AccountService accountService,
                                 CategoryService categoryService,
-                                CsvImportService csvImportService, AccountServiceImpl accountServiceImpl) {
+                                CsvImportService csvImportService,
+                                BudgetService budgetService) {
         this.transactionService = transactionService;
         this.accountService = accountService;
         this.categoryService = categoryService;
         this.csvImportService = csvImportService;
-        this.scanner = new Scanner(System.in); // Initialize scanner
-        this.accountServiceImpl = accountServiceImpl;
+        this.budgetService = budgetService;
+        this.scanner = new Scanner(System.in);
     }
 
     @Override
     public void run(String... args) throws Exception {
         log.info("Welcome to the Interactive Budget CLI!");
-        // Temporarily disable other data runners if you don't want them to run during interactive mode
-        // or ensure their @Order is lower than this one.
 
         boolean running = true;
         while (running) {
@@ -79,6 +85,12 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
                 case "6":
                     handleImportCsvTransactions();
                     break;
+                case "7":
+                    handleSetBudget();
+                    break;
+                case "8":
+                    handleViewBudgetStatus();
+                    break;
                 case "0":
                     running = false;
                     break;
@@ -91,7 +103,7 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
             }
         }
         log.info("Exiting Budget CLI. Goodbye!");
-        scanner.close(); // Close the scanner when done
+        scanner.close();
     }
 
     private void displayMenu() {
@@ -102,12 +114,11 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
         System.out.println("4. View Account Balances");
         System.out.println("5. List Categories");
         System.out.println("6. Import Transactions from CSV");
+        System.out.println("7. Set/Update Budget for Category");
+        System.out.println("8. View Budget Status for Month");
         System.out.println("0. Exit");
         System.out.println("-----------------------");
     }
-
-    // --- Placeholder methods for menu actions ---
-    // We will implement these one by one
 
     private void handleAddTransaction(TransactionType type) {
         log.info("--- Add {} ---", type.getDisplayName());
@@ -144,7 +155,6 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
             }
             Account selectedAccount = accounts.get(accChoice);
 
-            // Select Category (optional for income, maybe mandatory for expense)
             Long categoryId = null;
             List<Category> categories = categoryService.getAllCategories();
             if (!categories.isEmpty()) {
@@ -167,7 +177,6 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
                 log.warn("Expense transactions should ideally have a category. For now, proceeding without one if none selected.");
                 // You might want to make category mandatory for expenses here.
             }
-
 
             transactionService.createTransaction(amount, type, date, description, categoryId, selectedAccount.getId());
             Account updatedAccount = accountService.findAccountById(selectedAccount.getId())
@@ -308,6 +317,90 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
             log.warn("Invalid number format for account selection.");
         } catch (Exception e) {
             log.error("An unexpected error occurred during CSV import process: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleSetBudget() {
+        log.info("--- Set/Update Budget for Category ---");
+        try {
+            List<Category> categories = categoryService.getAllCategories();
+            if (categories.isEmpty()) {
+                log.warn("No categories available. Please add categories first.");
+                return;
+            }
+            log.info("Available Categories:");
+            for (int i = 0; i < categories.size(); i++) {
+                System.out.printf("%d. %s\n", i + 1, categories.get(i).getName());
+            }
+            System.out.print("Select Category (number) for budget: ");
+            int catChoice = Integer.parseInt(scanner.nextLine().trim()) - 1;
+            if (catChoice < 0 || catChoice >= categories.size()) {
+                log.warn("Invalid category selection:");
+                return;
+            }
+            Category selectedCategory = categories.get(catChoice);
+            System.out.print("Enter Year (e.g., 2025): ");
+            int year = Integer.parseInt(scanner.nextLine().trim());
+
+            System.out.print("Enter Month (1-12): ");
+            int month = Integer.parseInt(scanner.nextLine().trim());
+            if (month < 1 || month > 12) {
+                log.warn("Invalid month selection. Please enter a number between 1 and 12.");
+                return;
+            }
+            System.out.print("Enter Budgeted Amount for '" + selectedCategory.getName() + "' for " + year + "-" + String.format("%02d", month) + ": ");
+            BigDecimal budgetedAmount = new BigDecimal(scanner.nextLine().trim());
+
+            if (budgetedAmount.compareTo(BigDecimal.ZERO) < 0) {
+                log.warn("Budgeted amount cannot be negative.");
+                return;
+            }
+
+            budgetService.setBudget (selectedCategory.getId(), year,month, budgetedAmount);
+            log.info("Budget successfully set for Category '{}' for {}-{} to {}", selectedCategory.getName(), year, month, budgetedAmount);
+        } catch (NumberFormatException e) {
+            log.warn("Invalid number format for choice, year, month or amount.");
+        } catch (Exception e) {
+            log.error("Error setting budget: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleViewBudgetStatus() {
+        log.info("--- View Budget Status for Month ---");
+        try {
+            System.out.print("Enter Year (e.g., 2025): ");
+            int year = Integer.parseInt(scanner.nextLine().trim());
+
+            System.out.print("Enter Month (1-12): ");
+            int month = Integer.parseInt(scanner.nextLine().trim());
+            if (month < 1 || month > 12) {
+                log.warn("Invalid month. Please enter a number between 1 and 12.");
+                return;
+            }
+
+            log.info("Budget Status for {}-{}:", year, month);
+            List<BudgetStatusDTO> budgetStatuses = budgetService.getOverallBudgetStatusForPeriod(year, month);
+
+            if (budgetStatuses.isEmpty()) {
+                log.info("No budgets set for this period, or no spending in budgeted categories.");
+
+            } else {
+                System.out.println("--------------------------------------------------------------------------");
+                System.out.printf("%-20s | %12s | %12s | %12s%n", "Category", "Budgeted", "Spent", "Remaining");
+                System.out.println("--------------------------------------------------------------------------");
+                for (BudgetStatusDTO status : budgetStatuses) {
+                    System.out.printf("%-20s | %12.2f | %12.2f | %12.2f%n",
+                            status.categoryName(),
+                            status.budgetedAmount(),
+                            status.actualSpending(),
+                            status.remainingOrOverspent());
+                }
+                System.out.println("--------------------------------------------------------------------------");
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Invalid number format for year or month.");
+        } catch (Exception e) {
+            log.error("Error viewing budget status: {}", e.getMessage(), e);
         }
     }
 }
