@@ -9,7 +9,6 @@ import com.budget.budgetappspringboot.service.AccountService;
 import com.budget.budgetappspringboot.service.BudgetService;
 import com.budget.budgetappspringboot.service.CategoryService;
 import com.budget.budgetappspringboot.service.TransactionService;
-import com.budget.budgetappspringboot.service.impl.AccountServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
@@ -21,13 +20,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
-import java.io.*;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Scanner;
 
@@ -42,6 +42,7 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
     private final CsvImportService csvImportService;
     private final BudgetService budgetService;
     private final Scanner scanner;
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     public InteractiveBudgetCLI(TransactionService transactionService,
                                 AccountService accountService,
@@ -91,6 +92,18 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
                 case "8":
                     handleViewBudgetStatus();
                     break;
+                case "9":
+                    handleViewTransactionsByCategoryAndDateRange();
+                    break;
+                case "10":
+                    handleViewAllTransactionsByDateRange();
+                    break;
+                case "11": // <<< NEW CASE
+                    handleViewTransactionsByTypeAndDateRange();
+                    break;
+                case "12": // <<< NEW CASE
+                    handleSearchTransactionsByDescription();
+                    break;
                 case "0":
                     running = false;
                     break;
@@ -99,7 +112,7 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
             }
             if (running) {
                 System.out.println("\nPress Enter to continue...");
-                scanner.nextLine(); // Pause
+                scanner.nextLine();
             }
         }
         log.info("Exiting Budget CLI. Goodbye!");
@@ -116,6 +129,10 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
         System.out.println("6. Import Transactions from CSV");
         System.out.println("7. Set/Update Budget for Category");
         System.out.println("8. View Budget Status for Month");
+        System.out.println("9. View Transactions by Category & Date Range");
+        System.out.println("10. View All Transactions by Date Range");
+        System.out.println("11. View Transactions by Type & Date Range");
+        System.out.println("12. Search Transactions by Description Keyword");
         System.out.println("0. Exit");
         System.out.println("-----------------------");
     }
@@ -401,6 +418,234 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
             log.warn("Invalid number format for year or month.");
         } catch (Exception e) {
             log.error("Error viewing budget status: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleViewTransactionsByCategoryAndDateRange() {
+        log.info("--- View Transactions by Category & Date Range ---");
+        try {
+            // 1. Select Category
+            List<Category> categories = categoryService.getAllCategories();
+            if (categories.isEmpty()) {
+                log.warn("No categories available to filter by.");
+                return;
+            }
+            log.info("Available Categories:");
+            for (int i = 0; i < categories.size(); i++) {
+                System.out.printf("%d. %s\n", i + 1, categories.get(i).getName());
+            }
+            System.out.print("Select Category (number): ");
+            int catChoice = Integer.parseInt(scanner.nextLine().trim()) - 1;
+            if (catChoice < 0 || catChoice >= categories.size()) {
+                log.warn("Invalid category selection.");
+                return;
+            }
+            Category selectedCategory = categories.get(catChoice);
+
+            // 2. Get Dates
+            System.out.print("Enter Start Date (YYYY-MM-DD): ");
+            LocalDate startDate = LocalDate.parse(scanner.nextLine().trim(), DATE_FORMATTER);
+
+            System.out.print("Enter End Date (YYYY-MM-DD): ");
+            LocalDate endDate = LocalDate.parse(scanner.nextLine().trim(), DATE_FORMATTER);
+
+            if (startDate.isAfter(endDate)) {
+                log.warn("Start date cannot be after end date.");
+                return;
+            }
+
+            // 3. Call Service
+            List<Transaction> transactions = transactionService.getTransactionsByCategoryAndDateRange(
+                    selectedCategory.getId(), startDate, endDate);
+
+            // 4. Display Results
+            if (transactions.isEmpty()) {
+                log.info("No transactions found for category '{}' between {} and {}.",
+                        selectedCategory.getName(),
+                        startDate.format(DATE_FORMATTER),
+                        endDate.format(DATE_FORMATTER));
+            } else {
+                log.info("Transactions for category '{}' between {} and {}:",
+                        selectedCategory.getName(),
+                        startDate.format(DATE_FORMATTER),
+                        endDate.format(DATE_FORMATTER));
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                System.out.printf("%-12s | %-10s | %-8s | %10s | %-15s | %-30s%n",
+                        "Account", "Date", "Type", "Amount", "Category", "Description");
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                transactions.forEach(t -> System.out.printf("%-12.12s | %-10s | %-8s | %10.2f | %-15.15s | %-30.30s%n",
+                        t.getAccount().getName(), // Assumes Account name is not too long
+                        t.getTransactionDate().format(DATE_FORMATTER),
+                        t.getTransactionType().getDisplayName(),
+                        t.getAmount(),
+                        (t.getCategory() != null ? t.getCategory().getName() : "N/A"), // Category name should be selectedCategory.getName()
+                        t.getDescription()
+                ));
+                System.out.println("----------------------------------------------------------------------------------------------------");
+            }
+
+        } catch (NumberFormatException e) {
+            log.warn("Invalid number format for category choice.");
+        } catch (DateTimeParseException e) {
+            log.warn("Invalid date format. Please use YYYY-MM-DD.");
+        } catch (NoSuchElementException e) { // If service throws this for category not found (shouldn't happen if selected from list)
+            log.error("Error: {}", e.getMessage());
+        } catch (Exception e) {
+            log.error("Error viewing transactions by category and date: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleViewAllTransactionsByDateRange() {
+        log.info("--- View All Transactions by Date Range ---");
+        try {
+            System.out.print("Enter Start Date (YYYY-MM-DD): ");
+            LocalDate startDate = LocalDate.parse(scanner.nextLine().trim(), DATE_FORMATTER);
+
+            System.out.print("Enter End Date (YYYY-MM-DD): ");
+            LocalDate endDate = LocalDate.parse(scanner.nextLine().trim(), DATE_FORMATTER);
+
+            if (startDate.isAfter(endDate)) {
+                log.warn("Start date cannot be after end date.");
+                return;
+            }
+
+            List<Transaction> transactions = transactionService.getAllTransactionsByDateRange(startDate, endDate);
+
+            if (transactions.isEmpty()) {
+                log.info("No transactions found between {} and {}.",
+                        startDate.format(DATE_FORMATTER),
+                        endDate.format(DATE_FORMATTER));
+            } else {
+                log.info("All transactions between {} and {}:",
+                        startDate.format(DATE_FORMATTER),
+                        endDate.format(DATE_FORMATTER));
+                // Using the same display format as other transaction listings
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                System.out.printf("%-12s | %-10s | %-8s | %10s | %-15s | %-30s%n",
+                        "Account", "Date", "Type", "Amount", "Category", "Description");
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                transactions.forEach(t -> System.out.printf("%-12.12s | %-10s | %-8s | %10.2f | %-15.15s | %-30.30s%n",
+                        t.getAccount().getName(),
+                        t.getTransactionDate().format(DATE_FORMATTER),
+                        t.getTransactionType().getDisplayName(),
+                        t.getAmount(),
+                        (t.getCategory() != null ? t.getCategory().getName() : "N/A"),
+                        t.getDescription()
+                ));
+                System.out.println("----------------------------------------------------------------------------------------------------");
+            }
+
+        } catch (DateTimeParseException e) {
+            log.warn("Invalid date format. Please use YYYY-MM-DD.");
+        } catch (Exception e) {
+            log.error("Error viewing transactions by date range: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleViewTransactionsByTypeAndDateRange() {
+        log.info("--- View Transactions by Type & Date Range ---");
+        try {
+            // 1. Select Transaction Type
+            System.out.println("Select Transaction Type:");
+            System.out.println("1. Income");
+            System.out.println("2. Expense");
+            System.out.print("Enter choice (1 or 2): ");
+            String typeChoiceStr = scanner.nextLine().trim();
+            TransactionType selectedType;
+            if ("1".equals(typeChoiceStr)) {
+                selectedType = TransactionType.INCOME;
+            } else if ("2".equals(typeChoiceStr)) {
+                selectedType = TransactionType.EXPENSE;
+            } else {
+                log.warn("Invalid transaction type choice.");
+                return;
+            }
+
+            // 2. Get Dates
+            System.out.print("Enter Start Date (YYYY-MM-DD): ");
+            LocalDate startDate = LocalDate.parse(scanner.nextLine().trim(), DATE_FORMATTER);
+
+            System.out.print("Enter End Date (YYYY-MM-DD): ");
+            LocalDate endDate = LocalDate.parse(scanner.nextLine().trim(), DATE_FORMATTER);
+
+            if (startDate.isAfter(endDate)) {
+                log.warn("Start date cannot be after end date.");
+                return;
+            }
+
+            // 3. Call Service
+            List<Transaction> transactions = transactionService.getTransactionsByTypeAndDateRange(
+                    selectedType, startDate, endDate);
+
+            // 4. Display Results
+            if (transactions.isEmpty()) {
+                log.info("No {} transactions found between {} and {}.",
+                        selectedType.getDisplayName(),
+                        startDate.format(DATE_FORMATTER),
+                        endDate.format(DATE_FORMATTER));
+            } else {
+                log.info("{} transactions between {} and {}:",
+                        selectedType.getDisplayName(),
+                        startDate.format(DATE_FORMATTER),
+                        endDate.format(DATE_FORMATTER));
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                System.out.printf("%-12s | %-10s | %-8s | %10s | %-15s | %-30s%n",
+                        "Account", "Date", "Type", "Amount", "Category", "Description");
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                transactions.forEach(t -> System.out.printf("%-12.12s | %-10s | %-8s | %10.2f | %-15.15s | %-30.30s%n",
+                        t.getAccount().getName(),
+                        t.getTransactionDate().format(DATE_FORMATTER),
+                        t.getTransactionType().getDisplayName(),
+                        t.getAmount(),
+                        (t.getCategory() != null ? t.getCategory().getName() : "N/A"),
+                        t.getDescription()
+                ));
+                System.out.println("----------------------------------------------------------------------------------------------------");
+            }
+
+        } catch (NumberFormatException e) { // For type choice
+            log.warn("Invalid choice format. Please enter a number.");
+        } catch (DateTimeParseException e) {
+            log.warn("Invalid date format. Please use YYYY-MM-DD.");
+        } catch (Exception e) {
+            log.error("Error viewing transactions by type and date: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleSearchTransactionsByDescription() {
+        log.info("--- Search Transactions by Description Keyword ---");
+        try {
+            System.out.print("Enter keyword to search in description: ");
+            String keyword = scanner.nextLine().trim();
+
+            if (keyword.isEmpty()) {
+                log.warn("Search keyword cannot be empty.");
+                return;
+            }
+
+            List<Transaction> transactions = transactionService.searchTransactionsByDescription(keyword);
+
+            if (transactions.isEmpty()) {
+                log.info("No transactions found with description containing '{}'.", keyword);
+            } else {
+                log.info("Transactions with description containing '{}':", keyword);
+                // Using the same display format as other transaction listings
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                System.out.printf("%-12s | %-10s | %-8s | %10s | %-15s | %-30s%n",
+                        "Account", "Date", "Type", "Amount", "Category", "Description");
+                System.out.println("----------------------------------------------------------------------------------------------------");
+                transactions.forEach(t -> System.out.printf("%-12.12s | %-10s | %-8s | %10.2f | %-15.15s | %-30.30s%n",
+                        t.getAccount().getName(),
+                        t.getTransactionDate().format(DATE_FORMATTER),
+                        t.getTransactionType().getDisplayName(),
+                        t.getAmount(),
+                        (t.getCategory() != null ? t.getCategory().getName() : "N/A"),
+                        t.getDescription()
+                ));
+                System.out.println("----------------------------------------------------------------------------------------------------");
+            }
+        } catch (Exception e) {
+            log.error("Error searching transactions by description: {}", e.getMessage(), e);
         }
     }
 }

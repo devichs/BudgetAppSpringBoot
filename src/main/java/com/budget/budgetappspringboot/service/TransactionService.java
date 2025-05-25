@@ -17,5 +17,11 @@ public interface TransactionService {
 
     List<Transaction> getTransactionsByAccountId(Long accountId);
 
-    // We can add more methods later, like findById, updateTransaction, deleteTransaction, etc.
+    List<Transaction> getTransactionsByCategoryAndDateRange(Long categoryId, LocalDate startDate, LocalDate endDate);
+
+    List<Transaction> getAllTransactionsByDateRange(LocalDate startDate, LocalDate endDate);
+
+    List<Transaction> getTransactionsByTypeAndDateRange(TransactionType transactionType, LocalDate startDate, LocalDate endDate);
+
+    List<Transaction> searchTransactionsByDescription(String keyword);
 }
