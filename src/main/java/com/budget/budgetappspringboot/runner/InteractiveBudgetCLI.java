@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Scanner;
+import java.util.Comparator;
 
 @Component
 @Slf4j
@@ -515,7 +516,47 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
                 log.info("No transactions found between {} and {}.",
                         startDate.format(DATE_FORMATTER),
                         endDate.format(DATE_FORMATTER));
-            } else {
+                return;
+            }
+
+            System.out.print("Sort results? (yes/no, default: no - uses repository default sort): ");
+            String sortChoice = scanner.nextLine().trim().toLowerCase();
+
+            if ("yes".equals(sortChoice)) {
+                System.out.println("Sort by:");
+                System.out.println("1. Date");
+                System.out.println("2. Amount");
+                System.out.print("Enter field to sort by (1 or 2): ");
+                String fieldChoice = scanner.nextLine().trim();
+
+                System.out.println("Sort direction:");
+                System.out.println("1. Ascending");
+                System.out.println("2. Descending");
+                System.out.print("Enter sort direction (1 or 2): ");
+                String dirChoice = scanner.nextLine().trim();
+
+                Comparator<Transaction> comparator = null;
+
+                if ("1".equals(fieldChoice)) { // Sort by Date
+                    comparator = Comparator.comparing(Transaction::getTransactionDate);
+                    log.info("Sorting by Date.");
+                } else if ("2".equals(fieldChoice)) { // Sort by Amount
+                    comparator = Comparator.comparing(Transaction::getAmount);
+                    log.info("Sorting by Amount.");
+                } else {
+                    log.warn("Invalid sort field selected. Displaying with default repository order.");
+                }
+
+                if (comparator != null) {
+                    if ("2".equals(dirChoice)) { // Descending
+                        comparator = comparator.reversed();
+                        log.info("Sort direction: Descending.");
+                    } else {
+                        log.info("Sort direction: Ascending.");
+                    }
+                    transactions.sort(comparator);
+                }
+            }
                 log.info("All transactions between {} and {}:",
                         startDate.format(DATE_FORMATTER),
                         endDate.format(DATE_FORMATTER));
@@ -533,10 +574,11 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
                         t.getDescription()
                 ));
                 System.out.println("----------------------------------------------------------------------------------------------------");
-            }
 
         } catch (DateTimeParseException e) {
             log.warn("Invalid date format. Please use YYYY-MM-DD.");
+        } catch (NumberFormatException e) {
+            log.warn("INvalid numeric choice for sorting options.");
         } catch (Exception e) {
             log.error("Error viewing transactions by date range: {}", e.getMessage(), e);
         }
