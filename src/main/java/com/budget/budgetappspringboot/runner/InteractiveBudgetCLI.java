@@ -557,30 +557,17 @@ public class InteractiveBudgetCLI implements CommandLineRunner {
                     transactions.sort(comparator);
                 }
             }
-                log.info("All transactions between {} and {}:",
-                        startDate.format(DATE_FORMATTER),
-                        endDate.format(DATE_FORMATTER));
-                // Using the same display format as other transaction listings
-                System.out.println("----------------------------------------------------------------------------------------------------");
-                System.out.printf("%-12s | %-10s | %-8s | %10s | %-15s | %-30s%n",
-                        "Account", "Date", "Type", "Amount", "Category", "Description");
-                System.out.println("----------------------------------------------------------------------------------------------------");
-                transactions.forEach(t -> System.out.printf("%-12.12s | %-10s | %-8s | %10.2f | %-15.15s | %-30.30s%n",
-                        t.getAccount().getName(),
-                        t.getTransactionDate().format(DATE_FORMATTER),
-                        t.getTransactionType().getDisplayName(),
-                        t.getAmount(),
-                        (t.getCategory() != null ? t.getCategory().getName() : "N/A"),
-                        t.getDescription()
-                ));
-                System.out.println("----------------------------------------------------------------------------------------------------");
+            } else {
+
 
         } catch (DateTimeParseException e) {
             log.warn("Invalid date format. Please use YYYY-MM-DD.");
         } catch (NumberFormatException e) {
             log.warn("INvalid numeric choice for sorting options.");
-        } catch (Exception e) {
-            log.error("Error viewing transactions by date range: {}", e.getMessage(), e);
+            }
+
+        } catch (DateTimeParseException e) {
+            log.warn("Invalid date format. Please use YYYY-MM-DD.");
         }
     }
 
